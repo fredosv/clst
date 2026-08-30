@@ -19,6 +19,7 @@
   <div class="controls">
     <button id="btnStart" style="background:#4CAF50; color:white;">Démarrer Course</button>
     <button id="btnStop" style="background:#f44336; color:white;">Arrêter Course & Générer Ralenti</button>
+    <button id="btnLockFocus" style="background:#2196F3; color:white;">Bloquer Focus Actuel</button>
   </div>
   
   <div id="status">Surveillance ligne : Prête</div>
@@ -28,9 +29,11 @@
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const btnStart = document.getElementById('btnStart');
     const btnStop = document.getElementById('btnStop');
+    const btnLockFocus = document.getElementById('btnLockFocus');
     const statusDiv = document.getElementById('status');
 
     let videoStream = null;
+    let videoTrack = null;
     let videoElement = document.createElement('video');
     let isTiming = false;
     let startTime = 0;
@@ -40,7 +43,7 @@
     let recordedChunks = [];
 
     const FPS = 30;
-    const MAX_BUFFER = 60; // 2 secondes de mémoire avant passage à 30fps
+    const MAX_BUFFER = 60; 
     let prePassageBuffer = [];
     let postPassageBuffer = [];
 
@@ -59,11 +62,32 @@
         });
         videoElement.srcObject = videoStream;
         videoElement.play();
+        
+        videoTrack = videoStream.getVideoTracks()[0];
         requestAnimationFrame(drawFrame);
       } catch (err) {
         alert("Erreur d'accès à la caméra : " + err.message);
       }
     }
+
+    // Tente de figer le focus directement dans Chrome
+    btnLockFocus.addEventListener('click', async () => {
+      if (!videoTrack) return;
+      try {
+        const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+        if (capabilities.focusMode) {
+          await videoTrack.applyConstraints({
+            advanced: [{ focusMode: 'fixed' }]
+          });
+          statusDiv.textContent = "Focus verrouillé par le navigateur !";
+          statusDiv.style.color = "#2196F3";
+        } else {
+          statusDiv.textContent = "Verrouillage logiciel non géré sur ce matériel.";
+        }
+      } catch (e) {
+        statusDiv.textContent = "Échec du verrouillage focus.";
+      }
+    });
 
     function drawFrame() {
       if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA && !isReplaying) {
