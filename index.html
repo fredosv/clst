@@ -2,18 +2,20 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Chrono Agility - Course & Ralenti</title>
+  <title>Chrono Agility V1.1</title>
   <style>
     body { font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; margin: 0; padding: 15px; }
     #canvas { background: #000; width: 100%; max-width: 1080px; height: auto; border: 2px solid #444; }
     .controls { margin: 15px 0; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; align-items: center; }
     button { padding: 12px 24px; font-size: 16px; font-weight: bold; cursor: pointer; border: none; border-radius: 4px; }
     #status { font-weight: bold; color: #ff9900; font-size: 18px; margin-top: 10px; }
+    .version-tag { font-size: 14px; color: #888; margin-top: 5px; }
   </style>
 </head>
 <body>
 
   <h2>Chrono Agility - Course & Ralenti Automatique</h2>
+  <div class="version-tag">Version 1.1 (Filtrage sensibilité renforcé)</div>
   <canvas id="canvas" width="1280" height="720"></canvas>
   
   <div class="controls">
@@ -40,13 +42,16 @@
     let recordedChunks = [];
 
     const FPS = 30;
-    const MAX_BUFFER = FPS * 2; // 2 secondes de mémoire avant passage
+    const MAX_BUFFER = FPS * 2; 
     let prePassageBuffer = [];
     let postPassageBuffer = [];
 
     let prevLinePixels = null;
-    const SENSITIVITY = 20; 
-    const MOTION_THRESHOLD = 500; 
+    
+    // Seuils V1.1 : Haute tolérance anti-mouches / insectes
+    const SENSITIVITY = 40;        
+    const MOTION_THRESHOLD = 3500; 
+
     let isDetected = false;
     let lineStateColor = '#ff9900';
     let isReplaying = false;
@@ -63,7 +68,7 @@
         });
         
         videoElement.srcObject = videoStream;
-        videoElement.setAttribute('playsinline', 'true'); // Requis pour iOS / Chrome mobile
+        videoElement.setAttribute('playsinline', 'true');
         await videoElement.play();
         requestAnimationFrame(drawFrame);
       } catch (err) {
@@ -113,7 +118,7 @@
     function detectMotionOnLine() {
       if (!isTiming || isDetected) return;
 
-      const roiWidth = 20;
+      const roiWidth = 30;
       const roiX = (canvas.width / 2) - (roiWidth / 2);
       const currentPixels = ctx.getImageData(roiX, 0, roiWidth, canvas.height).data;
 
@@ -194,7 +199,7 @@
     function finishAndDownload() {
       mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: 'video/webm' });
-        downloadFile(blob, `course_agility_${getTimestamp()}.webm`);
+        downloadFile(blob, `course_agility_v1.1_${getTimestamp()}.webm`);
         isReplaying = false;
         lineStateColor = '#ff9900';
         statusDiv.textContent = "Surveillance ligne : Prête";
