@@ -19,7 +19,6 @@
   <div class="controls">
     <button id="btnStart" style="background:#4CAF50; color:white;">Démarrer Course</button>
     <button id="btnStop" style="background:#f44336; color:white;">Arrêter Course & Générer Ralenti</button>
-    <button id="btnLockFocus" style="background:#2196F3; color:white;">Bloquer Focus Actuel</button>
   </div>
   
   <div id="status">Surveillance ligne : Prête</div>
@@ -29,11 +28,9 @@
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const btnStart = document.getElementById('btnStart');
     const btnStop = document.getElementById('btnStop');
-    const btnLockFocus = document.getElementById('btnLockFocus');
     const statusDiv = document.getElementById('status');
 
     let videoStream = null;
-    let videoTrack = null;
     let videoElement = document.createElement('video');
     let isTiming = false;
     let startTime = 0;
@@ -56,38 +53,50 @@
 
     async function initCamera() {
       try {
-        videoStream = await navigator.mediaDevices.getUserMedia({ 
-          video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "environment" }, 
-          audio: false 
-        });
+        // Demande d'abord une autorisation générale pour lister correctement les périphériques
+        const initialStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        initialStream.getTracks().forEach(track => track.stop());
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        
+        // Recherche d'un objectif ultra-wide / grand angle arrière
+        const backCamera = videoDevices.find(d => 
+          d.label.toLowerCase().includes('wide') || 
+          d.label.toLowerCase().includes('ultra') || 
+          d.label.toLowerCase().includes('back 0') ||
+          d.label.toLowerCase().includes('arrière 0')
+        ) || videoDevices[videoDevices.length - 1];
+
+        const constraints = {
+          video: {
+            deviceId: backCamera && backCamera.deviceId ? { exact: backCamera.deviceId } : undefined,
+            facingMode: backCamera ? undefined : { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: false
+        };
+
+        videoStream = await navigator.mediaDevices.getUserMedia(constraints);
         videoElement.srcObject = videoStream;
         videoElement.play();
-        
-        videoTrack = videoStream.getVideoTracks()[0];
         requestAnimationFrame(drawFrame);
       } catch (err) {
-        alert("Erreur d'accès à la caméra : " + err.message);
+        // En cas d'échec sur la sélection spécifique, bascule sur la caméra arrière standard
+        try {
+          videoStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "environment" }, 
+            audio: false 
+          });
+          videoElement.srcObject = videoStream;
+          videoElement.play();
+          requestAnimationFrame(drawFrame);
+        } catch (e) {
+          alert("Erreur d'accès à la caméra : " + e.message);
+        }
       }
     }
-
-    // Tente de figer le focus directement dans Chrome
-    btnLockFocus.addEventListener('click', async () => {
-      if (!videoTrack) return;
-      try {
-        const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
-        if (capabilities.focusMode) {
-          await videoTrack.applyConstraints({
-            advanced: [{ focusMode: 'fixed' }]
-          });
-          statusDiv.textContent = "Focus verrouillé par le navigateur !";
-          statusDiv.style.color = "#2196F3";
-        } else {
-          statusDiv.textContent = "Verrouillage logiciel non géré sur ce matériel.";
-        }
-      } catch (e) {
-        statusDiv.textContent = "Échec du verrouillage focus.";
-      }
-    });
 
     function drawFrame() {
       if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA && !isReplaying) {
