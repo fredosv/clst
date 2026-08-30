@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Chrono Agility - Universal</title>
+  <title>Chrono Agility - Course & Ralenti</title>
   <style>
     body { font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; margin: 0; padding: 15px; }
     #canvas { background: #000; width: 100%; max-width: 1080px; height: auto; border: 2px solid #444; }
@@ -39,8 +39,8 @@
     let mediaRecorder = null;
     let recordedChunks = [];
 
-    let currentFPS = 30;
-    let MAX_BUFFER = 60;
+    const FPS = 30;
+    const MAX_BUFFER = FPS * 2; // 2 secondes de mémoire avant passage
     let prePassageBuffer = [];
     let postPassageBuffer = [];
 
@@ -52,35 +52,23 @@
     let isReplaying = false;
 
     async function initCamera() {
-      // Tentative 1 : Demander la caméra haute vitesse (USB 120FPS)
       try {
         videoStream = await navigator.mediaDevices.getUserMedia({ 
           video: { 
             width: { ideal: 1280 }, 
             height: { ideal: 720 },
-            frameRate: { ideal: 120, min: 30 }
+            facingMode: { ideal: "environment" }
           }, 
           audio: false 
         });
-        currentFPS = 60;
+        
+        videoElement.srcObject = videoStream;
+        videoElement.setAttribute('playsinline', 'true'); // Requis pour iOS / Chrome mobile
+        await videoElement.play();
+        requestAnimationFrame(drawFrame);
       } catch (err) {
-        // Tentative 2 : Fallback matériel standard (PC / Smartphone)
-        try {
-          videoStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "environment" }, 
-            audio: false 
-          });
-          currentFPS = 30;
-        } catch (e) {
-          alert("Erreur d'accès à la caméra : " + e.message);
-          return;
-        }
+        alert("Erreur d'accès à la caméra : " + err.message);
       }
-
-      MAX_BUFFER = currentFPS * 2;
-      videoElement.srcObject = videoStream;
-      videoElement.play();
-      requestAnimationFrame(drawFrame);
     }
 
     function drawFrame() {
@@ -161,7 +149,7 @@
       statusDiv.textContent = "Surveillance ligne : En cours...";
       statusDiv.style.color = "#55ff55";
 
-      const stream = canvas.captureStream(currentFPS);
+      const stream = canvas.captureStream(FPS);
       let mime = 'video/webm;codecs=vp9';
       if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
 
@@ -184,7 +172,6 @@
         isReplaying = true;
 
         let idx = 0;
-        const speedInterval = currentFPS === 60 ? 33 : 66;
         const playSlowMo = setInterval(() => {
           if (idx < fullSlowMoSequence.length) {
             ctx.putImageData(fullSlowMoSequence[idx], 0, 0);
@@ -198,7 +185,7 @@
             clearInterval(playSlowMo);
             finishAndDownload();
           }
-        }, speedInterval);
+        }, 66);
       } else {
         finishAndDownload();
       }
