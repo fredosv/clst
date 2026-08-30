@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Chrono Agility - Course & Ralenti Sur Mesure</title>
+  <style>
+    body { font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; margin: 0; padding: 15px; }
+    #canvas { background: #000; width: 100%; max-width: 1080px; height: auto; border: 2px solid #444; }
+    .controls { margin: 15px 0; }
+    button { padding: 12px 24px; font-size: 16px; margin: 0 5px; font-weight: bold; cursor: pointer; }
+    #status { font-weight: bold; color: #ff9900; font-size: 18px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+
+  <h2>Chrono Agility - Course & Ralenti Automatique</h2>
+  <canvas id="canvas" width="1920" height="1080"></canvas>
+  
+  <div class="controls">
+    <button id="btnStart" style="background:#4CAF50; color:white;">Démarrer Course</button>
+    <button id="btnStop" style="background:#f44336; color:white;">Arrêter Course & Générer Ralenti</button>
+  </div>
+  
+  <div id="status">Surveillance ligne : Prête</div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const btnStart = document.getElementById('btnStart');
+    const btnStop = document.getElementById('btnStop');
+    const statusDiv = document.getElementById('status');
+
+    let videoStream = null;
+    let videoElement = document.createElement('video');
+    let isTiming = false;
+    let startTime = 0;
+    let elapsedTime = 0;
+
+    let mediaRecorder = null;
+    let recordedChunks = [];
+
+    const FPS = 30;
+    const MAX_BUFFER = 60; // 2 secondes d'historique avant le franchissement
+    let prePassageBuffer = []; // Stocke les 2s avant franchissement
+    let postPassageBuffer = []; // Stocke tout depuis le franchissement jusqu'au clic STOP
+
+    let prevLinePixels = null;
+    const SENSITIVITY = 20; 
+    const MOTION_THRESHOLD = 500; 
+    let isDetected = false;
+    let lineStateColor = '#ff9900';
+    let isReplaying = false;
+
+    async function initCamera() {
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "environment" }, 
+          audio: false 
+        });
+        videoElement.srcObject = videoStream;
+        videoElement.play();
+        requestAnimationFrame(drawFrame);
+      } catch (err) {
+        alert("Erreur accès caméra : " + err.message);
+      }
+    }
+
+    function drawFrame() {
+      if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA && !isReplaying) {
+        ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+        detectMotionOnLine();
+
+        ctx.strokeStyle = lineStateColor;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(canvas.width / 2, 0);
+        ctx.lineTo(canvas.width / 2, canvas.height);
+        ctx.stroke();
+
+        if (isTiming) {
+          elapsedTime = (performance.now() - startTime) / 1000;
+        }
+
+        const timeStr = elapsedTime.toFixed(2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.fillRect(60, 60, 360, 130);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 85px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(timeStr, 240, 155);
+
+        const frameData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        // Si la ligne n'a pas encore été franchie, on garde les 2 dernières secondes
+        if (!isDetected) {
+          prePassageBuffer.push(frameData);
+          if (prePassageBuffer.length > MAX_BUFFER) {
+            prePassageBuffer.shift();
+          }
+        } else {
+          // Une fois le franchissement détecté, on enregistre Tout jusqu'au clic STOP
+          postPassageBuffer.push(frameData);
+        }
+      }
+      requestAnimationFrame(drawFrame);
+    }
+
+    function detectMotionOnLine() {
+      if (!isTiming || isDetected) return;
+
+      const roiWidth = 30;
+      const roiX = (canvas.width / 2) - (roiWidth / 2);
+      const currentPixels = ctx.getImageData(roiX, 0, roiWidth, canvas.height).data;
+
+      if (prevLinePixels) {
+        let diff = 0;
+        for (let i = 0; i < currentPixels.length; i += 4) {
+          const deltaR = Math.abs(currentPixels[i] - prevLinePixels[i]);
+          const deltaG = Math.abs(currentPixels[i+1] - prevLinePixels[i+1]);
+          const deltaB = Math.abs(currentPixels[i+2] - prevLinePixels[i+2]);
+          
+          if ((deltaR + deltaG + deltaB) / 3 > SENSITIVITY) diff++;
+        }
+
+        if (diff > MOTION_THRESHOLD) {
+          isDetected = true;
+          lineStateColor = '#ff0000';
+          statusDiv.textContent = "PASSAGE DÉTECTÉ ! Enregistrement du ralenti jusqu'à ton clic STOP...";
+          statusDiv.style.color = "#ff3333";
+        }
+      }
+      prevLinePixels = currentPixels;
+    }
+
+    function startRecording() {
+      if (isTiming) return;
+      recordedChunks = [];
+      prePassageBuffer = [];
+      postPassageBuffer = [];
+      isDetected = false;
+      isReplaying = false;
+      lineStateColor = '#ff9900';
+
+      statusDiv.textContent = "Surveillance ligne : En cours...";
+      statusDiv.style.color = "#55ff55";
+
+      const stream = canvas.captureStream(FPS);
+      let mime = 'video/webm;codecs=vp9';
+      if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
+
+      mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6000000 });
+      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+      mediaRecorder.start();
+      
+      startTime = performance.now();
+      isTiming = true;
+    }
+
+    function stopRecording() {
+      if (!isTiming) return;
+      isTiming = false;
+
+      // Assemblage : 2s avant la ligne + toutes les images jusqu'à maintenant (clic STOP)
+      const fullSlowMoSequence = [...prePassageBuffer, ...postPassageBuffer];
+
+      if (isDetected && fullSlowMoSequence.length > 0) {
+        statusDiv.textContent = "Ajout du ralenti (jusqu'au clic STOP) à la fin de la vidéo...";
+        isReplaying = true;
+
+        let idx = 0;
+        const playSlowMo = setInterval(() => {
+          if (idx < fullSlowMoSequence.length) {
+            ctx.putImageData(fullSlowMoSequence[idx], 0, 0);
+            
+            ctx.fillStyle = '#ff0000';
+            ctx.font = 'bold 50px sans-serif';
+            ctx.fillText("REPLAY RALENTI", canvas.width / 2, 80);
+
+            idx++;
+          } else {
+            clearInterval(playSlowMo);
+            finishAndDownload();
+          }
+        }, 133); // Ralenti à 0.25x
+      } else {
+        finishAndDownload();
+      }
+    }
+
+    function finishAndDownload() {
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        downloadFile(blob, `course_agility_${getTimestamp()}.webm`);
+        isReplaying = false;
+        lineStateColor = '#ff9900';
+        statusDiv.textContent = "Surveillance ligne : Prête";
+        statusDiv.style.color = "#ff9900";
+      };
+      mediaRecorder.stop();
+    }
+
+    function downloadFile(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 200);
+    }
+
+    function getTimestamp() {
+      return new Date().toISOString().slice(11, 19).replace(/:/g, '-');
+    }
+
+    btnStart.addEventListener('click', startRecording);
+    btnStop.addEventListener('click', stopRecording);
+
+    initCamera();
+  </script>
+</body>
+</html>
