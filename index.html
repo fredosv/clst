@@ -2,13 +2,12 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Chrono Agility - Focus Manuel</title>
+  <title>Chrono Agility - Course & Ralenti</title>
   <style>
     body { font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; margin: 0; padding: 15px; }
     #canvas { background: #000; width: 100%; max-width: 1080px; height: auto; border: 2px solid #444; }
     .controls { margin: 15px 0; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; align-items: center; }
     button { padding: 12px 24px; font-size: 16px; font-weight: bold; cursor: pointer; border: none; border-radius: 4px; }
-    .focus-box { background: #333; padding: 10px 15px; border-radius: 5px; display: none; align-items: center; gap: 10px; }
     #status { font-weight: bold; color: #ff9900; font-size: 18px; margin-top: 10px; }
   </style>
 </head>
@@ -20,11 +19,6 @@
   <div class="controls">
     <button id="btnStart" style="background:#4CAF50; color:white;">Démarrer Course</button>
     <button id="btnStop" style="background:#f44336; color:white;">Arrêter Course & Générer Ralenti</button>
-    
-    <div id="focusContainer" class="focus-box">
-      <label for="focusSlider">Mise au point :</label>
-      <input type="range" id="focusSlider" min="0" max="100" step="1">
-    </div>
   </div>
   
   <div id="status">Surveillance ligne : Prête</div>
@@ -35,11 +29,8 @@
     const btnStart = document.getElementById('btnStart');
     const btnStop = document.getElementById('btnStop');
     const statusDiv = document.getElementById('status');
-    const focusContainer = document.getElementById('focusContainer');
-    const focusSlider = document.getElementById('focusSlider');
 
     let videoStream = null;
-    let videoTrack = null;
     let videoElement = document.createElement('video');
     let isTiming = false;
     let startTime = 0;
@@ -49,7 +40,7 @@
     let recordedChunks = [];
 
     const FPS = 30;
-    const MAX_BUFFER = 60;
+    const MAX_BUFFER = 60; // 2 secondes de mémoire avant passage à 30fps
     let prePassageBuffer = [];
     let postPassageBuffer = [];
 
@@ -68,43 +59,9 @@
         });
         videoElement.srcObject = videoStream;
         videoElement.play();
-        
-        videoTrack = videoStream.getVideoTracks()[0];
-        setupManualFocus(videoTrack);
-
         requestAnimationFrame(drawFrame);
       } catch (err) {
-        alert("Erreur accès caméra : " + err.message);
-      }
-    }
-
-    function setupManualFocus(track) {
-      const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-      
-      // Vérification si le contrôle de focus est géré par la caméra du téléphone
-      if (capabilities.focusMode && capabilities.focusMode.includes('manual')) {
-        focusContainer.style.display = 'flex';
-        
-        if (capabilities.focusDistance) {
-          focusSlider.min = capabilities.focusDistance.min;
-          focusSlider.max = capabilities.focusDistance.max;
-          focusSlider.step = capabilities.focusDistance.step || 0.01;
-          
-          const settings = track.getSettings();
-          focusSlider.value = settings.focusDistance || capabilities.focusDistance.min;
-        }
-
-        focusSlider.addEventListener('input', async () => {
-          try {
-            await track.applyConstraints({
-              advanced: [{ focusMode: 'manual', focusDistance: parseFloat(focusSlider.value) }]
-            });
-          } catch (e) {
-            console.warn("Échec du réglage de mise au point :", e);
-          }
-        });
-      } else {
-        console.log("Le réglage manuel du focus n'est pas supporté par ce navigateur/matériel.");
+        alert("Erreur d'accès à la caméra : " + err.message);
       }
     }
 
@@ -167,7 +124,7 @@
         if (diff > MOTION_THRESHOLD) {
           isDetected = true;
           lineStateColor = '#ff0000';
-          statusDiv.textContent = "PASSAGE DÉTECTÉ ! Enregistrement du ralenti jusqu'à ton clic STOP...";
+          statusDiv.textContent = "PASSAGE DÉTECTÉ ! Enregistrement du ralenti...";
           statusDiv.style.color = "#ff3333";
         }
       }
