@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Chrono Agility - Course & Ralenti</title>
+  <title>Chrono Agility - High Speed 120FPS</title>
   <style>
     body { font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; margin: 0; padding: 15px; }
     #canvas { background: #000; width: 100%; max-width: 1080px; height: auto; border: 2px solid #444; }
@@ -13,8 +13,8 @@
 </head>
 <body>
 
-  <h2>Chrono Agility - Course & Ralenti Automatique</h2>
-  <canvas id="canvas" width="1920" height="1080"></canvas>
+  <h2>Chrono Agility - Course & Ralenti 120 FPS</h2>
+  <canvas id="canvas" width="1280" height="720"></canvas>
   
   <div class="controls">
     <button id="btnStart" style="background:#4CAF50; color:white;">Démarrer Course</button>
@@ -39,62 +39,34 @@
     let mediaRecorder = null;
     let recordedChunks = [];
 
-    const FPS = 30;
-    const MAX_BUFFER = 60; 
+    const TARGET_FPS = 120; 
+    const MAX_BUFFER = TARGET_FPS * 2; // 2 secondes à 120 FPS (240 images)
     let prePassageBuffer = [];
     let postPassageBuffer = [];
 
     let prevLinePixels = null;
-    const SENSITIVITY = 20; 
-    const MOTION_THRESHOLD = 500; 
+    const SENSITIVITY = 25; 
+    const MOTION_THRESHOLD = 400; 
     let isDetected = false;
     let lineStateColor = '#ff9900';
     let isReplaying = false;
 
     async function initCamera() {
       try {
-        // Demande d'abord une autorisation générale pour lister correctement les périphériques
-        const initialStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        initialStream.getTracks().forEach(track => track.stop());
-
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-        
-        // Recherche d'un objectif ultra-wide / grand angle arrière
-        const backCamera = videoDevices.find(d => 
-          d.label.toLowerCase().includes('wide') || 
-          d.label.toLowerCase().includes('ultra') || 
-          d.label.toLowerCase().includes('back 0') ||
-          d.label.toLowerCase().includes('arrière 0')
-        ) || videoDevices[videoDevices.length - 1];
-
-        const constraints = {
-          video: {
-            deviceId: backCamera && backCamera.deviceId ? { exact: backCamera.deviceId } : undefined,
-            facingMode: backCamera ? undefined : { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-          },
-          audio: false
-        };
-
-        videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+        // Demande la résolution 720p pour débloquer les 120 / 210 FPS du capteur OV9281
+        videoStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            width: { ideal: 1280 }, 
+            height: { ideal: 720 },
+            frameRate: { ideal: TARGET_FPS, min: 60 }
+          }, 
+          audio: false 
+        });
         videoElement.srcObject = videoStream;
         videoElement.play();
         requestAnimationFrame(drawFrame);
       } catch (err) {
-        // En cas d'échec sur la sélection spécifique, bascule sur la caméra arrière standard
-        try {
-          videoStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: "environment" }, 
-            audio: false 
-          });
-          videoElement.srcObject = videoStream;
-          videoElement.play();
-          requestAnimationFrame(drawFrame);
-        } catch (e) {
-          alert("Erreur d'accès à la caméra : " + e.message);
-        }
+        alert("Erreur d'accès à la caméra USB : " + err.message);
       }
     }
 
@@ -117,11 +89,11 @@
 
         const timeStr = elapsedTime.toFixed(2);
         ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-        ctx.fillRect(60, 60, 360, 130);
+        ctx.fillRect(40, 40, 260, 90);
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 85px monospace';
+        ctx.font = 'bold 60px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(timeStr, 240, 155);
+        ctx.fillText(timeStr, 170, 105);
 
         const frameData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
@@ -140,7 +112,7 @@
     function detectMotionOnLine() {
       if (!isTiming || isDetected) return;
 
-      const roiWidth = 30;
+      const roiWidth = 20;
       const roiX = (canvas.width / 2) - (roiWidth / 2);
       const currentPixels = ctx.getImageData(roiX, 0, roiWidth, canvas.height).data;
 
@@ -176,11 +148,11 @@
       statusDiv.textContent = "Surveillance ligne : En cours...";
       statusDiv.style.color = "#55ff55";
 
-      const stream = canvas.captureStream(FPS);
+      const stream = canvas.captureStream(60);
       let mime = 'video/webm;codecs=vp9';
       if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
 
-      mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6000000 });
+      mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8000000 });
       mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
       mediaRecorder.start();
       
@@ -195,24 +167,25 @@
       const fullSlowMoSequence = [...prePassageBuffer, ...postPassageBuffer];
 
       if (isDetected && fullSlowMoSequence.length > 0) {
-        statusDiv.textContent = "Ajout du ralenti à la fin de la vidéo...";
+        statusDiv.textContent = "Génération du ralenti fluide (120 FPS)...";
         isReplaying = true;
 
         let idx = 0;
+        // Lecture intervalle 33ms pour un vrai ralenti 4x très propre
         const playSlowMo = setInterval(() => {
           if (idx < fullSlowMoSequence.length) {
             ctx.putImageData(fullSlowMoSequence[idx], 0, 0);
             
             ctx.fillStyle = '#ff0000';
-            ctx.font = 'bold 50px sans-serif';
-            ctx.fillText("REPLAY RALENTI", canvas.width / 2, 80);
+            ctx.font = 'bold 40px sans-serif';
+            ctx.fillText("REPLAY RALENTI", canvas.width / 2, 60);
 
             idx++;
           } else {
             clearInterval(playSlowMo);
             finishAndDownload();
           }
-        }, 133);
+        }, 33);
       } else {
         finishAndDownload();
       }
