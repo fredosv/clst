@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>Chrono Agility - High Speed 120FPS</title>
+  <title>Chrono Agility - Universal</title>
   <style>
     body { font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; margin: 0; padding: 15px; }
     #canvas { background: #000; width: 100%; max-width: 1080px; height: auto; border: 2px solid #444; }
@@ -13,7 +13,7 @@
 </head>
 <body>
 
-  <h2>Chrono Agility - Course & Ralenti 120 FPS</h2>
+  <h2>Chrono Agility - Course & Ralenti Automatique</h2>
   <canvas id="canvas" width="1280" height="720"></canvas>
   
   <div class="controls">
@@ -39,35 +39,48 @@
     let mediaRecorder = null;
     let recordedChunks = [];
 
-    const TARGET_FPS = 120; 
-    const MAX_BUFFER = TARGET_FPS * 2; // 2 secondes à 120 FPS (240 images)
+    let currentFPS = 30;
+    let MAX_BUFFER = 60;
     let prePassageBuffer = [];
     let postPassageBuffer = [];
 
     let prevLinePixels = null;
-    const SENSITIVITY = 25; 
-    const MOTION_THRESHOLD = 400; 
+    const SENSITIVITY = 20; 
+    const MOTION_THRESHOLD = 500; 
     let isDetected = false;
     let lineStateColor = '#ff9900';
     let isReplaying = false;
 
     async function initCamera() {
+      // Tentative 1 : Demander la caméra haute vitesse (USB 120FPS)
       try {
-        // Demande la résolution 720p pour débloquer les 120 / 210 FPS du capteur OV9281
         videoStream = await navigator.mediaDevices.getUserMedia({ 
           video: { 
             width: { ideal: 1280 }, 
             height: { ideal: 720 },
-            frameRate: { ideal: TARGET_FPS, min: 60 }
+            frameRate: { ideal: 120, min: 30 }
           }, 
           audio: false 
         });
-        videoElement.srcObject = videoStream;
-        videoElement.play();
-        requestAnimationFrame(drawFrame);
+        currentFPS = 60;
       } catch (err) {
-        alert("Erreur d'accès à la caméra USB : " + err.message);
+        // Tentative 2 : Fallback matériel standard (PC / Smartphone)
+        try {
+          videoStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "environment" }, 
+            audio: false 
+          });
+          currentFPS = 30;
+        } catch (e) {
+          alert("Erreur d'accès à la caméra : " + e.message);
+          return;
+        }
       }
+
+      MAX_BUFFER = currentFPS * 2;
+      videoElement.srcObject = videoStream;
+      videoElement.play();
+      requestAnimationFrame(drawFrame);
     }
 
     function drawFrame() {
@@ -148,11 +161,11 @@
       statusDiv.textContent = "Surveillance ligne : En cours...";
       statusDiv.style.color = "#55ff55";
 
-      const stream = canvas.captureStream(60);
+      const stream = canvas.captureStream(currentFPS);
       let mime = 'video/webm;codecs=vp9';
       if (!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
 
-      mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8000000 });
+      mediaRecorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6000000 });
       mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
       mediaRecorder.start();
       
@@ -167,11 +180,11 @@
       const fullSlowMoSequence = [...prePassageBuffer, ...postPassageBuffer];
 
       if (isDetected && fullSlowMoSequence.length > 0) {
-        statusDiv.textContent = "Génération du ralenti fluide (120 FPS)...";
+        statusDiv.textContent = "Génération du ralenti...";
         isReplaying = true;
 
         let idx = 0;
-        // Lecture intervalle 33ms pour un vrai ralenti 4x très propre
+        const speedInterval = currentFPS === 60 ? 33 : 66;
         const playSlowMo = setInterval(() => {
           if (idx < fullSlowMoSequence.length) {
             ctx.putImageData(fullSlowMoSequence[idx], 0, 0);
@@ -185,7 +198,7 @@
             clearInterval(playSlowMo);
             finishAndDownload();
           }
-        }, 33);
+        }, speedInterval);
       } else {
         finishAndDownload();
       }
